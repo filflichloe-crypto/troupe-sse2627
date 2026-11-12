@@ -7,37 +7,47 @@ export default function ScoutGame() {
   const [role, setRole] = useState(() => localStorage.getItem('scout_role') || null);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem('scout_player_name') || '');
   
-  // Missions state
+  // Persistent shared missions state
   const [missions, setMissions] = useState(() => {
-    const saved = localStorage.getItem('scout_missions');
+    const saved = localStorage.getItem('scout_shared_missions');
     return saved ? JSON.parse(saved) : [
       { id: 1, title: 'Night Navigation Checkpoint', reward: 50 }
     ];
   });
 
-  // Auctions / Bids state
+  // Persistent shared auctions state
   const [auctions, setAuctions] = useState(() => {
-    const saved = localStorage.getItem('scout_auctions');
+    const saved = localStorage.getItem('scout_shared_auctions');
     return saved ? JSON.parse(saved) : [
       { id: 1, item: 'Golden Compass Badge', minBid: 100, currentBid: null, bidder: null }
     ];
   });
 
-  // Players roster state
+  // Persistent players roster
   const [players, setPlayers] = useState(() => {
-    const saved = localStorage.getItem('scout_players');
+    const saved = localStorage.getItem('scout_shared_players');
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Host form inputs
+  // Form inputs
   const [newMissionTitle, setNewMissionTitle] = useState('');
   const [newMissionReward, setNewMissionReward] = useState('');
   const [newItemName, setNewItemName] = useState('');
   const [newItemMinBid, setNewItemMinBid] = useState('');
+  const [bidInput, setBidInput] = useState({});
 
-  useEffect(() => { localStorage.setItem('scout_missions', JSON.stringify(missions)); }, [missions]);
-  useEffect(() => { localStorage.setItem('scout_auctions', JSON.stringify(auctions)); }, [auctions]);
-  useEffect(() => { localStorage.setItem('scout_players', JSON.stringify(players)); }, [players]);
+  // Sync state changes to localStorage so they never get lost on reload
+  useEffect(() => { 
+    localStorage.setItem('scout_shared_missions', JSON.stringify(missions)); 
+  }, [missions]);
+
+  useEffect(() => { 
+    localStorage.setItem('scout_shared_auctions', JSON.stringify(auctions)); 
+  }, [auctions]);
+
+  useEffect(() => { 
+    localStorage.setItem('scout_shared_players', JSON.stringify(players)); 
+  }, [players]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -46,14 +56,17 @@ export default function ScoutGame() {
     const assignedRole = userEmail.trim().toLowerCase() === HOST_EMAIL.toLowerCase() ? 'host' : 'player';
     setRole(assignedRole);
     
+    const currentName = playerName || (assignedRole === 'host' ? 'Host Leader' : 'Scout Patrol');
+    
     localStorage.setItem('scout_email', userEmail);
     localStorage.setItem('scout_role', assignedRole);
-    localStorage.setItem('scout_player_name', playerName || 'Scout Patrol');
+    localStorage.setItem('scout_player_name', currentName);
+    setPlayerName(currentName);
 
-    if (assignedRole === 'player' && playerName) {
-      const exists = players.some(p => p.name.toLowerCase() === playerName.toLowerCase());
+    if (assignedRole === 'player') {
+      const exists = players.some(p => p.name.toLowerCase() === currentName.toLowerCase());
       if (!exists) {
-        setPlayers([...players, { id: Date.now(), name: playerName, email: userEmail, coins: 150 }]); // Start players with 150 coins for bidding
+        setPlayers([...players, { id: Date.now(), name: currentName, email: userEmail, coins: 150 }]);
       }
     }
   };
@@ -70,7 +83,8 @@ export default function ScoutGame() {
   const addMission = (e) => {
     e.preventDefault();
     if (!newMissionTitle) return;
-    setMissions([...missions, { id: Date.now(), title: newMissionTitle, reward: Number(newMissionReward) || 10 }]);
+    const updatedMissions = [...missions, { id: Date.now(), title: newMissionTitle, reward: Number(newMissionReward) || 10 }];
+    setMissions(updatedMissions);
     setNewMissionTitle('');
     setNewMissionReward('');
   };
@@ -78,22 +92,25 @@ export default function ScoutGame() {
   const addAuctionItem = (e) => {
     e.preventDefault();
     if (!newItemName) return;
-    setAuctions([...auctions, { id: Date.now(), item: newItemName, minBid: Number(newItemMinBid) || 50, currentBid: null, bidder: null }]);
+    const updatedAuctions = [...auctions, { id: Date.now(), item: newItemName, minBid: Number(newItemMinBid) || 50, currentBid: null, bidder: null }];
+    setAuctions(updatedAuctions);
     setNewItemName('');
     setNewItemMinBid('');
   };
 
-  const placeBid = (auctionId, bidAmount) => {
+  const placeBid = (auctionId) => {
+    const amount = Number(bidInput[auctionId]);
     setAuctions(auctions.map(a => {
       if (a.id === auctionId) {
-        if (bidAmount < a.minBid || (a.currentBid && bidAmount <= a.currentBid)) {
+        if (!amount || amount < a.minBid || (a.currentBid && amount <= a.currentBid)) {
           alert('Bid must be higher than current bid or minimum bid!');
           return a;
         }
-        return { ...a, currentBid: bidAmount, bidder: playerName || userEmail };
+        return { ...a, currentBid: amount, bidder: playerName || userEmail };
       }
       return a;
     }));
+    setBidInput({ ...bidInput, [auctionId]: '' });
   };
 
   const acceptBid = (auctionId) => {
@@ -159,12 +176,14 @@ export default function ScoutGame() {
 
             <div style={styles.listContainer}>
               <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Active Missions:</h3>
-              {missions.map(m => (
-                <div key={m.id} style={styles.missionItem}>
-                  <div><span>{m.title}</span><div style={{color: '#ffd700', fontSize: '12px'}}>🪙 {m.reward}</div></div>
-                  <button onClick={() => deleteMission(m.id)} style={styles.deleteButton}>Delete</button>
-                </div>
-              ))}
+              {missions.length === 0 ? <p style={{fontSize: '13px', color: '#a3c1ad'}}>No missions added yet.</p> :
+                missions.map(m => (
+                  <div key={m.id} style={styles.missionItem}>
+                    <div><span>{m.title}</span><div style={{color: '#ffd700', fontSize: '12px'}}>🪙 {m.reward}</div></div>
+                    <button onClick={() => deleteMission(m.id)} style={styles.deleteButton}>Delete</button>
+                  </div>
+                ))
+              }
             </div>
 
             {/* Add Auction Item Form */}
@@ -177,23 +196,25 @@ export default function ScoutGame() {
 
             <div style={styles.listContainer}>
               <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Bids & Auctions:</h3>
-              {auctions.map(a => (
-                <div key={a.id} style={styles.missionItem}>
-                  <div>
-                    <span style={{fontWeight: 'bold'}}>{a.item}</span>
-                    <div style={{fontSize: '12px', color: '#ffd700'}}>Min Bid: 🪙 {a.minBid}</div>
-                    {a.currentBid ? (
-                      <div style={{fontSize: '12px', color: '#85e3ff'}}>Current Bid: 🪙 {a.currentBid} by {a.bidder}</div>
-                    ) : (
-                      <div style={{fontSize: '11px', color: '#a3c1ad'}}>No bids yet</div>
-                    )}
+              {auctions.length === 0 ? <p style={{fontSize: '13px', color: '#a3c1ad'}}>No active auctions.</p> :
+                auctions.map(a => (
+                  <div key={a.id} style={styles.missionItem}>
+                    <div>
+                      <span style={{fontWeight: 'bold'}}>{a.item}</span>
+                      <div style={{fontSize: '12px', color: '#ffd700'}}>Min Bid: 🪙 {a.minBid}</div>
+                      {a.currentBid ? (
+                        <div style={{fontSize: '12px', color: '#85e3ff'}}>Current Bid: 🪙 {a.currentBid} by {a.bidder}</div>
+                      ) : (
+                        <div style={{fontSize: '11px', color: '#a3c1ad'}}>No bids yet</div>
+                      )}
+                    </div>
+                    <div style={{display: 'flex', gap: '5px', flexDirection: 'column'}}>
+                      {a.currentBid && <button onClick={() => acceptBid(a.id)} style={styles.claimButton}>Accept Bid</button>}
+                      <button onClick={() => deleteAuction(a.id)} style={styles.deleteButton}>Remove</button>
+                    </div>
                   </div>
-                  <div style={{display: 'flex', gap: '5px', flexDirection: 'column'}}>
-                    {a.currentBid && <button onClick={() => acceptBid(a.id)} style={styles.claimButton}>Accept Bid</button>}
-                    <button onClick={() => deleteAuction(a.id)} style={styles.deleteButton}>Remove</button>
-                  </div>
-                </div>
-              ))}
+                ))
+              }
             </div>
 
             <button onClick={handleLogout} style={styles.logoutButton}>Switch User</button>
@@ -205,41 +226,42 @@ export default function ScoutGame() {
             
             <div style={styles.listContainer}>
               <h3 style={{color: '#fff', fontSize: '15px', margin: '5px 0 8px 0'}}>Missions:</h3>
-              {missions.map(m => (
-                <div key={m.id} style={styles.missionItem}>
-                  <div>
-                    <div style={{fontWeight: 'bold'}}>{m.title}</div>
-                    <div style={{fontSize: '12px', color: '#a3c1ad'}}>Reward: 🪙 {m.reward} coins</div>
+              {missions.length === 0 ? <p style={{fontSize: '13px', color: '#a3c1ad'}}>No missions available.</p> :
+                missions.map(m => (
+                  <div key={m.id} style={styles.missionItem}>
+                    <div>
+                      <div style={{fontWeight: 'bold'}}>{m.title}</div>
+                      <div style={{fontSize: '12px', color: '#a3c1ad'}}>Reward: 🪙 {m.reward} coins</div>
+                    </div>
+                    <button style={styles.claimButton} onClick={() => alert(`Mission submitted to host!`)}>Complete</button>
                   </div>
-                  <button style={styles.claimButton} onClick={() => alert(`Mission submitted to host!`)}>Complete</button>
-                </div>
-              ))}
+                ))
+              }
             </div>
 
             <div style={styles.listContainer}>
               <h3 style={{color: '#ffd700', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Auctions & Bidding:</h3>
-              {auctions.map(a => {
-                const [bidInput, setBidInput] = useState('');
-                return (
+              {auctions.length === 0 ? <p style={{fontSize: '13px', color: '#a3c1ad'}}>No active auctions.</p> :
+                auctions.map(a => (
                   <div key={a.id} style={styles.missionItem}>
                     <div>
                       <div style={{fontWeight: 'bold'}}>{a.item}</div>
                       <div style={{fontSize: '12px', color: '#a3c1ad'}}>Min Bid: 🪙 {a.minBid}</div>
                       <div style={{fontSize: '12px', color: '#85e3ff'}}>Highest Bid: {a.currentBid ? `🪙 ${a.currentBid} (${a.bidder})` : 'None'}</div>
                     </div>
-                    <div style={{display: 'flex', gap: '5px', marginTop: '6px'}}>
+                    <div style={{display: 'flex', gap: '5px', marginTop: '6px', alignItems: 'center'}}>
                       <input 
                         type="number" 
-                        placeholder="Bid amount" 
-                        value={bidInput} 
-                        onChange={e => setBidInput(e.target.value)} 
-                        style={{width: '80px', padding: '4px', fontSize: '12px', borderRadius: '4px', border: '1px solid #2e7d51', background: '#123320', color: '#fff'}} 
+                        placeholder="Bid" 
+                        value={bidInput[a.id] || ''} 
+                        onChange={e => setBidInput({ ...bidInput, [a.id]: e.target.value })} 
+                        style={{width: '70px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #2e7d51', background: '#123320', color: '#fff'}} 
                       />
-                      <button style={styles.claimButton} onClick={() => { placeBid(a.id, Number(bidInput)); setBidInput(''); }}>Place Bid</button>
+                      <button style={styles.claimButton} onClick={() => placeBid(a.id)}>Bid</button>
                     </div>
                   </div>
-                );
-              })}
+                ))
+              }
             </div>
 
             <button onClick={handleLogout} style={styles.logoutButton}>Switch User</button>
