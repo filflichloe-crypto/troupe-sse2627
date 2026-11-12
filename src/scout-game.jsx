@@ -49,7 +49,7 @@ import {
 // FIREBASE CONFIGURATION (Troupe challenges 2627)
 // ==========================================
 const firebaseConfig = {
-  apiKey: "AIzaSyCtIfpQ4y6cCgoi0lP1IrNxyrC0LGHRZD4",
+  apiKey: "AIzaSyCtIfpQ4y6cCgoi0lPIIrNxyrC0LGHRZD4",
   authDomain: "troupe-challenges-2627.firebaseapp.com",
   projectId: "troupe-challenges-2627",
   storageBucket: "troupe-challenges-2627.firebasestorage.app",
