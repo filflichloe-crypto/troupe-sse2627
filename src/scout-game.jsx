@@ -65,11 +65,12 @@ export default function ScoutGame() {
     setUserEmail(normalizedInput);
     setPlayerName(currentName);
 
+    // Add player to database instantly so they appear on the host leaderboard
     if (assignedRole === 'player') {
       const q = query(collection(db, 'players'), where("email", "==", normalizedInput));
       const snap = await getDocs(q);
       if (snap.empty) {
-        await addDoc(collection(db, 'players'), { name: currentName, email: normalizedInput, coins: 0, status: 'pending' });
+        await addDoc(collection(db, 'players'), { name: currentName, email: normalizedInput, coins: 0 });
       }
     }
   };
@@ -81,12 +82,6 @@ export default function ScoutGame() {
     localStorage.clear();
   };
 
-  // Host Actions
-  const approvePlayer = async (playerId) => {
-    await updateDoc(doc(db, 'players', playerId), { status: 'approved' });
-  };
-
-  // NEW: Reject a request or remove a player completely
   const removePlayer = async (playerId) => {
     if (window.confirm("Are you sure you want to remove this player?")) {
       await deleteDoc(doc(db, 'players', playerId));
@@ -152,9 +147,6 @@ export default function ScoutGame() {
   };
 
   const currentPlayer = players.find(p => p.email === userEmail);
-  const isApproved = currentPlayer?.status === 'approved';
-  const pendingPlayers = players.filter(p => p.status === 'pending');
-  const approvedPlayers = players.filter(p => p.status === 'approved');
 
   return (
     <div style={styles.container}>
@@ -171,35 +163,21 @@ export default function ScoutGame() {
         ) : role === 'host' ? (
           <div>
             <div style={styles.badgeHost}>Host Mode: {userEmail}</div>
-            
-            {/* Player Approvals (Now with Reject Button) */}
-            {pendingPlayers.length > 0 && (
-              <div style={styles.listContainer}>
-                <h3 style={{color: '#ff8585', fontSize: '15px', margin: '5px 0 8px 0'}}>Needs Access Approval ({pendingPlayers.length}):</h3>
-                {pendingPlayers.map(p => (
-                  <div key={p.id} style={styles.missionItem}>
-                    <span style={{fontWeight: 'bold'}}>{p.name}</span>
-                    <div style={{display: 'flex', gap: '5px'}}>
-                      <button onClick={() => approvePlayer(p.id)} style={styles.claimButton}>Approve</button>
-                      <button onClick={() => removePlayer(p.id)} style={styles.deleteButton}>Reject</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
 
-            {/* Troop Leaderboard (Host View - Now with Remove Button) */}
+            {/* Troop Leaderboard (Host View) */}
             <div style={styles.listContainer}>
-              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Approved Players & Coins:</h3>
-              {approvedPlayers.map(p => (
-                <div key={p.id} style={styles.missionItem}>
-                  <div>
-                    <span>{p.name}</span>
-                    <span style={{color: '#ffd700', fontWeight: 'bold', marginLeft: '10px'}}>🪙 {p.coins || 0}</span>
+              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Players & Coins ({players.length}):</h3>
+              {players.length === 0 ? <p style={styles.emptyText}>No players joined yet.</p> :
+                players.map(p => (
+                  <div key={p.id} style={styles.missionItem}>
+                    <div>
+                      <span>{p.name}</span>
+                      <span style={{color: '#ffd700', fontWeight: 'bold', marginLeft: '10px'}}>🪙 {p.coins || 0}</span>
+                    </div>
+                    <button onClick={() => removePlayer(p.id)} style={styles.deleteButton}>Remove</button>
                   </div>
-                  <button onClick={() => removePlayer(p.id)} style={styles.deleteButton}>Remove</button>
-                </div>
-              ))}
+                ))
+              }
             </div>
 
             {/* Submissions to Review */}
@@ -260,13 +238,6 @@ export default function ScoutGame() {
 
             <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
           </div>
-        ) : role === 'player' && !isApproved ? (
-          <div>
-            <div style={styles.badgePlayer}>Status: Pending</div>
-            <h2 style={styles.title}>Waiting for Host Approval...</h2>
-            <p style={styles.subtitle}>A host must accept you before you can see missions or bids.</p>
-            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
-          </div>
         ) : (
           <div>
             <div style={styles.badgePlayer}>Patrol: {playerName} | 🪙 {currentPlayer?.coins || 0} Coins</div>
@@ -274,11 +245,13 @@ export default function ScoutGame() {
             {/* Live Leaderboard */}
             <div style={styles.listContainer}>
               <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Troop Leaderboard:</h3>
-              {approvedPlayers.sort((a,b) => (b.coins||0) - (a.coins||0)).map(p => (
-                <div key={p.id} style={{display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#c2d6cb', padding: '4px 0'}}>
-                  <span>{p.name}</span><span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
-                </div>
-              ))}
+              {players.length === 0 ? <p style={styles.emptyText}>You are the first player!</p> :
+                players.sort((a,b) => (b.coins||0) - (a.coins||0)).map(p => (
+                  <div key={p.id} style={{display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#c2d6cb', padding: '4px 0'}}>
+                    <span>{p.name}</span><span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
+                  </div>
+                ))
+              }
             </div>
 
             {/* Recent Activity */}
@@ -317,40 +290,4 @@ export default function ScoutGame() {
                       <div style={{fontWeight: 'bold'}}>{a.item}</div>
                       <div style={{fontSize: '12px', color: '#85e3ff'}}>Top Bid: {a.currentBid ? `🪙 ${a.currentBid} (${a.bidder})` : 'None'}</div>
                     </div>
-                    <div style={{display: 'flex', gap: '5px', alignItems: 'center'}}>
-                      <input type="number" placeholder={`> ${a.currentBid || a.minBid}`} value={bidInput[a.id] || ''} onChange={e => setBidInput({ ...bidInput, [a.id]: e.target.value })} style={{width: '60px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #2e7d51', background: '#123320', color: '#fff'}} />
-                      <button style={styles.claimButton} onClick={() => placeBid(a.id, a.minBid, a.currentBid)}>Bid</button>
-                    </div>
-                  </div>
-                ))
-              }
-            </div>
-
-            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const styles = {
-  container: { minHeight: '100vh', background: '#143825', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', padding: '20px' },
-  card: { background: '#1e4d32', border: '2px solid #2e7d51', borderRadius: '16px', padding: '30px', width: '100%', maxWidth: '480px', textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' },
-  iconBox: { fontSize: '40px', marginBottom: '10px' },
-  title: { color: '#ffffff', fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' },
-  subtitle: { color: '#a3c1ad', fontSize: '14px', marginBottom: '24px' },
-  form: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  missionForm: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '15px', textAlign: 'left' },
-  input: { padding: '12px', borderRadius: '8px', border: '1px solid #2e7d51', background: '#123320', color: '#fff', fontSize: '15px', outline: 'none' },
-  button: { background: '#ffffff', color: '#143825', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '8px' },
-  secondaryButton: { background: '#2e7d51', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
-  logoutButton: { background: 'transparent', color: '#a3c1ad', border: '1px solid #2e7d51', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', marginTop: '20px', fontSize: '13px' },
-  badgeHost: { background: '#b23b3b', color: '#fff', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', marginBottom: '16px', display: 'inline-block' },
-  badgePlayer: { background: '#2b7ab2', color: '#fff', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', marginBottom: '16px', display: 'inline-block' },
-  listContainer: { textAlign: 'left', marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px', background: '#123320', padding: '12px', borderRadius: '8px', border: '1px solid #2e7d51' },
-  missionItem: { background: '#143825', padding: '10px 14px', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff', fontSize: '14px', border: '1px solid #2e7d51' },
-  claimButton: { background: '#ffffff', color: '#143825', border: 'none', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' },
-  deleteButton: { background: '#b23b3b', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' },
-  emptyText: { fontSize: '13px', color: '#a3c1ad' }
-};
+                    <div style={{display: 'flex', gap
