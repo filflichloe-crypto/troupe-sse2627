@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, onSnapshot, query, where } from 'firebase/firestore';
 
-// Connects to your specific Firebase project
 const firebaseConfig = {
   apiKey: "AIzaSyCt1fpQ4y6cCgoi0lP1IrNxyrC0LGHRZD4",
   authDomain: "troupe-challenges-2627.firebaseapp.com",
@@ -15,11 +14,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Added jeanbouhabib@hotmail.com to the list of approved host emails
 const HOST_EMAILS = ['filflichloe@gmail.com', 'jeanbouhabib@hotmail.com'];
 
 export default function ScoutGame() {
-  // Keeps you logged in when you reload
   const [userEmail, setUserEmail] = useState(() => localStorage.getItem('scout_email') || '');
   const [role, setRole] = useState(() => localStorage.getItem('scout_role') || null);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem('scout_player_name') || '');
@@ -28,6 +25,7 @@ export default function ScoutGame() {
   const [auctions, setAuctions] = useState([]);
   const [players, setPlayers] = useState([]);
   const [submissions, setSubmissions] = useState([]);
+  const [history, setHistory] = useState([]); // Tracks who won what
 
   const [newMissionTitle, setNewMissionTitle] = useState('');
   const [newMissionReward, setNewMissionReward] = useState('');
@@ -35,49 +33,44 @@ export default function ScoutGame() {
   const [newItemMinBid, setNewItemMinBid] = useState('');
   const [bidInput, setBidInput] = useState({});
 
-  // Real-time synchronization for all devices
   useEffect(() => {
     if (!role) return;
 
-    const unsubMissions = onSnapshot(collection(db, 'missions'), (snapshot) => 
-      setMissions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-    );
-    const unsubAuctions = onSnapshot(collection(db, 'auctions'), (snapshot) => 
-      setAuctions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-    );
-    const unsubPlayers = onSnapshot(collection(db, 'players'), (snapshot) => 
-      setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-    );
-    const unsubSubs = onSnapshot(collection(db, 'submissions'), (snapshot) => 
-      setSubmissions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-    );
+    const unsubMissions = onSnapshot(collection(db, 'missions'), (snap) => setMissions(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubAuctions = onSnapshot(collection(db, 'auctions'), (snap) => setAuctions(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubPlayers = onSnapshot(collection(db, 'players'), (snap) => setPlayers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubSubs = onSnapshot(collection(db, 'submissions'), (snap) => setSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubHistory = onSnapshot(collection(db, 'history'), (snap) => {
+      const hist = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setHistory(hist.sort((a, b) => b.timestamp - a.timestamp)); // Newest first
+    });
 
-    return () => { unsubMissions(); unsubAuctions(); unsubPlayers(); unsubSubs(); };
+    return () => { unsubMissions(); unsubAuctions(); unsubPlayers(); unsubSubs(); unsubHistory(); };
   }, [role]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!userEmail) return;
 
-    // Checks if the entered email is inside the HOST_EMAILS list
     const normalizedInput = userEmail.trim().toLowerCase();
     const isHost = HOST_EMAILS.some(email => email.toLowerCase() === normalizedInput);
-    
     const assignedRole = isHost ? 'host' : 'player';
-    setRole(assignedRole);
-    const currentName = playerName || (assignedRole === 'host' ? 'Host Leader' : 'Scout Patrol');
     
-    localStorage.setItem('scout_email', userEmail);
+    setRole(assignedRole);
+    const currentName = playerName || (isHost ? 'Host Leader' : 'Scout Patrol');
+    
+    localStorage.setItem('scout_email', normalizedInput);
     localStorage.setItem('scout_role', assignedRole);
     localStorage.setItem('scout_player_name', currentName);
+    setUserEmail(normalizedInput);
     setPlayerName(currentName);
 
-    // Register new players to the database so host can see their coins
     if (assignedRole === 'player') {
-      const q = query(collection(db, 'players'), where("email", "==", userEmail));
+      const q = query(collection(db, 'players'), where("email", "==", normalizedInput));
       const snap = await getDocs(q);
       if (snap.empty) {
-        await addDoc(collection(db, 'players'), { name: currentName, email: userEmail, coins: 0 });
+        // New players start as "pending" until host approves them
+        await addDoc(collection(db, 'players'), { name: currentName, email: normalizedInput, coins: 0, status: 'pending' });
       }
     }
   };
@@ -87,6 +80,35 @@ export default function ScoutGame() {
     setUserEmail('');
     setPlayerName('');
     localStorage.clear();
+  };
+
+  // Host Actions
+  const approvePlayer = async (playerId) => {
+    await updateDoc(doc(db, 'players', playerId), { status: 'approved' });
+  };
+
+  const approveSubmission = async (sub) => {
+    const p = players.find(player => player.email === sub.playerEmail);
+    if (p) {
+      await updateDoc(doc(db, 'players', p.id), { coins: (p.coins || 0) + sub.reward });
+      await addDoc(collection(db, 'history'), { 
+        message: `🏅 ${sub.playerName} completed "${sub.missionTitle}" and earned ${sub.reward} coins!`, 
+        timestamp: Date.now() 
+      });
+    }
+    await deleteDoc(doc(db, 'submissions', sub.id));
+  };
+
+  const closeBidAndAward = async (auction) => {
+    if (!auction.currentBid || !auction.bidder) {
+      alert("No one has bid on this yet!");
+      return;
+    }
+    await addDoc(collection(db, 'history'), { 
+      message: `🎉 ${auction.bidder} won the auction for "${auction.item}" with a bid of ${auction.currentBid} coins!`, 
+      timestamp: Date.now() 
+    });
+    await deleteDoc(doc(db, 'auctions', auction.id));
   };
 
   const addMission = async (e) => {
@@ -105,40 +127,29 @@ export default function ScoutGame() {
     setNewItemMinBid('');
   };
 
+  // Player Actions
+  const completeMission = async (mission) => {
+    await addDoc(collection(db, 'submissions'), {
+      missionId: mission.id, missionTitle: mission.title, reward: mission.reward,
+      playerName: playerName || userEmail, playerEmail: userEmail,
+    });
+    alert('Mission sent to host for approval!');
+  };
+
   const placeBid = async (auctionId, minBid, currentBid) => {
     const amount = Number(bidInput[auctionId]);
     if (!amount || amount < minBid || (currentBid && amount <= currentBid)) {
-      alert('Bid must be higher than current bid or minimum bid!');
+      alert('Bid must be higher than the current bid!');
       return;
     }
     await updateDoc(doc(db, 'auctions', auctionId), { currentBid: amount, bidder: playerName || userEmail });
     setBidInput({ ...bidInput, [auctionId]: '' });
   };
 
-  const completeMission = async (mission) => {
-    await addDoc(collection(db, 'submissions'), {
-      missionId: mission.id,
-      missionTitle: mission.title,
-      reward: mission.reward,
-      playerName: playerName || userEmail,
-      playerEmail: userEmail,
-    });
-    alert('Mission sent to host for approval!');
-  };
-
-  // Host approves mission and player gets coins
-  const approveSubmission = async (sub) => {
-    const p = players.find(player => player.email === sub.playerEmail);
-    if (p) {
-      await updateDoc(doc(db, 'players', p.id), { coins: (p.coins || 0) + sub.reward });
-    }
-    await deleteDoc(doc(db, 'submissions', sub.id));
-    alert(`Approved! 🪙 ${sub.reward} coins awarded to ${sub.playerName}.`);
-  };
-
-  const rejectSubmission = async (subId) => {
-    await deleteDoc(doc(db, 'submissions', subId));
-  };
+  const currentPlayer = players.find(p => p.email === userEmail);
+  const isApproved = currentPlayer?.status === 'approved';
+  const pendingPlayers = players.filter(p => p.status === 'pending');
+  const approvedPlayers = players.filter(p => p.status === 'approved');
 
   return (
     <div style={styles.container}>
@@ -148,7 +159,7 @@ export default function ScoutGame() {
 
         {!role ? (
           <form onSubmit={handleLogin} style={styles.form}>
-            <input type="email" placeholder="Enter your email to join..." value={userEmail} onChange={(e) => setUserEmail(e.target.value)} style={styles.input} required />
+            <input type="email" placeholder="Enter your email..." value={userEmail} onChange={(e) => setUserEmail(e.target.value)} style={styles.input} required />
             <input type="text" placeholder="Your Patrol / Player Name" value={playerName} onChange={(e) => setPlayerName(e.target.value)} style={styles.input} required />
             <button type="submit" style={styles.button}>Enter Game</button>
           </form>
@@ -156,38 +167,49 @@ export default function ScoutGame() {
           <div>
             <div style={styles.badgeHost}>Host Mode: {userEmail}</div>
             
-            {/* Player Roster & Coins */}
-            <div style={styles.listContainer}>
-              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Scout Patrols ({players.length}):</h3>
-              {players.length === 0 ? <p style={styles.emptyText}>No players joined yet.</p> :
-                players.map(p => (
+            {/* Player Approvals */}
+            {pendingPlayers.length > 0 && (
+              <div style={styles.listContainer}>
+                <h3 style={{color: '#ff8585', fontSize: '15px', margin: '5px 0 8px 0'}}>Needs Access Approval ({pendingPlayers.length}):</h3>
+                {pendingPlayers.map(p => (
                   <div key={p.id} style={styles.missionItem}>
                     <span style={{fontWeight: 'bold'}}>{p.name}</span>
-                    <span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
+                    <button onClick={() => approvePlayer(p.id)} style={styles.claimButton}>Approve Player</button>
                   </div>
-                ))
-              }
-            </div>
+                ))}
+              </div>
+            )}
 
-            {/* Pending Approvals */}
+            {/* Submissions to Review */}
             <div style={styles.listContainer}>
-              <h3 style={{color: '#85e3ff', fontSize: '15px', margin: '5px 0 8px 0'}}>Needs Approval ({submissions.length}):</h3>
+              <h3 style={{color: '#85e3ff', fontSize: '15px', margin: '5px 0 8px 0'}}>Mission Submissions ({submissions.length}):</h3>
               {submissions.length === 0 ? <p style={styles.emptyText}>No pending missions.</p> :
                 submissions.map(sub => (
                   <div key={sub.id} style={styles.missionItem}>
                     <div>
                       <span style={{fontWeight: 'bold'}}>{sub.playerName}</span>
-                      <div style={{fontSize: '12px', color: '#a3c1ad'}}>Completed: {sub.missionTitle} (🪙 {sub.reward})</div>
+                      <div style={{fontSize: '12px', color: '#a3c1ad'}}>{sub.missionTitle}</div>
                     </div>
                     <div style={{display: 'flex', gap: '5px'}}>
-                      <button onClick={() => approveSubmission(sub)} style={styles.claimButton}>Accept</button>
-                      <button onClick={() => rejectSubmission(sub.id)} style={styles.deleteButton}>Reject</button>
+                      <button onClick={() => approveSubmission(sub)} style={styles.claimButton}>Accept (🪙 {sub.reward})</button>
+                      <button onClick={() => deleteDoc(doc(db, 'submissions', sub.id))} style={styles.deleteButton}>Reject</button>
                     </div>
                   </div>
                 ))
               }
             </div>
 
+            {/* Troop Leaderboard (Host View) */}
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Approved Players & Coins:</h3>
+              {approvedPlayers.map(p => (
+                <div key={p.id} style={styles.missionItem}>
+                  <span>{p.name}</span><span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Post Mission */}
             <form onSubmit={addMission} style={styles.missionForm}>
               <input type="text" placeholder="Mission Title" value={newMissionTitle} onChange={e => setNewMissionTitle(e.target.value)} style={styles.input} required />
               <input type="number" placeholder="Coin Reward" value={newMissionReward} onChange={e => setNewMissionReward(e.target.value)} style={styles.input} required />
@@ -199,25 +221,73 @@ export default function ScoutGame() {
               {missions.map(m => (
                 <div key={m.id} style={styles.missionItem}>
                   <div><span>{m.title}</span><div style={{color: '#ffd700', fontSize: '12px'}}>🪙 {m.reward}</div></div>
-                  <button onClick={() => deleteDoc(doc(db, 'missions', m.id))} style={styles.deleteButton}>Delete</button>
+                  <button onClick={() => deleteDoc(doc(db, 'missions', m.id))} style={styles.deleteButton}>Remove</button>
                 </div>
               ))}
             </div>
 
-            <button onClick={handleLogout} style={styles.logoutButton}>Switch User</button>
+            {/* Post Auction */}
+            <form onSubmit={addAuctionItem} style={styles.missionForm}>
+              <input type="text" placeholder="Auction Item" value={newItemName} onChange={e => setNewItemName(e.target.value)} style={styles.input} required />
+              <input type="number" placeholder="Min Bid" value={newItemMinBid} onChange={e => setNewItemMinBid(e.target.value)} style={styles.input} required />
+              <button type="submit" style={styles.secondaryButton}>Post Auction</button>
+            </form>
+
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Auctions:</h3>
+              {auctions.map(a => (
+                <div key={a.id} style={styles.missionItem}>
+                  <div>
+                    <span style={{fontWeight: 'bold'}}>{a.item}</span>
+                    <div style={{fontSize: '12px', color: '#85e3ff'}}>{a.currentBid ? `Top Bid: 🪙 ${a.currentBid} (${a.bidder})` : `Min Bid: 🪙 ${a.minBid}`}</div>
+                  </div>
+                  <button onClick={() => closeBidAndAward(a)} style={styles.claimButton}>Close Bid</button>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
+          </div>
+        ) : role === 'player' && !isApproved ? (
+          <div>
+            <div style={styles.badgePlayer}>Status: Pending</div>
+            <h2 style={styles.title}>Waiting for Host Approval...</h2>
+            <p style={styles.subtitle}>A host must accept you before you can see missions or bids.</p>
+            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
           </div>
         ) : (
           <div>
-            <div style={styles.badgePlayer}>Patrol: {playerName}</div>
+            <div style={styles.badgePlayer}>Patrol: {playerName} | 🪙 {currentPlayer?.coins || 0} Coins</div>
             
+            {/* Live Leaderboard */}
             <div style={styles.listContainer}>
-              <h3 style={{color: '#fff', fontSize: '15px', margin: '5px 0 8px 0'}}>Missions:</h3>
-              {missions.length === 0 ? <p style={styles.emptyText}>No missions available.</p> :
+              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Troop Leaderboard:</h3>
+              {approvedPlayers.sort((a,b) => (b.coins||0) - (a.coins||0)).map(p => (
+                <div key={p.id} style={{display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#c2d6cb', padding: '4px 0'}}>
+                  <span>{p.name}</span><span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Recent Activity */}
+            {history.length > 0 && (
+              <div style={styles.listContainer}>
+                <h3 style={{color: '#85e3ff', fontSize: '15px', margin: '5px 0 8px 0'}}>Recent Wins:</h3>
+                {history.slice(0, 3).map(h => (
+                  <div key={h.id} style={{fontSize: '12px', color: '#fff', padding: '4px 0', borderBottom: '1px solid #2e7d51'}}>{h.message}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Missions */}
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Active Missions:</h3>
+              {missions.length === 0 ? <p style={styles.emptyText}>No active missions.</p> :
                 missions.map(m => (
                   <div key={m.id} style={styles.missionItem}>
                     <div>
                       <div style={{fontWeight: 'bold'}}>{m.title}</div>
-                      <div style={{fontSize: '12px', color: '#a3c1ad'}}>Reward: 🪙 {m.reward} coins</div>
+                      <div style={{fontSize: '12px', color: '#a3c1ad'}}>Reward: 🪙 {m.reward}</div>
                     </div>
                     <button style={styles.claimButton} onClick={() => completeMission(m)}>Complete</button>
                   </div>
@@ -225,7 +295,26 @@ export default function ScoutGame() {
               }
             </div>
 
-            <button onClick={handleLogout} style={styles.logoutButton}>Switch User</button>
+            {/* Auctions */}
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Auctions:</h3>
+              {auctions.length === 0 ? <p style={styles.emptyText}>No active auctions.</p> :
+                auctions.map(a => (
+                  <div key={a.id} style={styles.missionItem}>
+                    <div>
+                      <div style={{fontWeight: 'bold'}}>{a.item}</div>
+                      <div style={{fontSize: '12px', color: '#85e3ff'}}>Top Bid: {a.currentBid ? `🪙 ${a.currentBid} (${a.bidder})` : 'None'}</div>
+                    </div>
+                    <div style={{display: 'flex', gap: '5px', alignItems: 'center'}}>
+                      <input type="number" placeholder={`> ${a.currentBid || a.minBid}`} value={bidInput[a.id] || ''} onChange={e => setBidInput({ ...bidInput, [a.id]: e.target.value })} style={{width: '60px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #2e7d51', background: '#123320', color: '#fff'}} />
+                      <button style={styles.claimButton} onClick={() => placeBid(a.id, a.minBid, a.currentBid)}>Bid</button>
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+
+            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
           </div>
         )}
       </div>
@@ -238,6 +327,7 @@ const styles = {
   card: { background: '#1e4d32', border: '2px solid #2e7d51', borderRadius: '16px', padding: '30px', width: '100%', maxWidth: '480px', textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' },
   iconBox: { fontSize: '40px', marginBottom: '10px' },
   title: { color: '#ffffff', fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' },
+  subtitle: { color: '#a3c1ad', fontSize: '14px', marginBottom: '24px' },
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   missionForm: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '15px', textAlign: 'left' },
   input: { padding: '12px', borderRadius: '8px', border: '1px solid #2e7d51', background: '#123320', color: '#fff', fontSize: '15px', outline: 'none' },
