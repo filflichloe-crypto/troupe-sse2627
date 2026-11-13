@@ -65,7 +65,6 @@ export default function ScoutGame() {
     setUserEmail(normalizedInput);
     setPlayerName(currentName);
 
-    // Add player to database instantly so they appear on the host leaderboard
     if (assignedRole === 'player') {
       const q = query(collection(db, 'players'), where("email", "==", normalizedInput));
       const snap = await getDocs(q);
@@ -219,75 +218,4 @@ export default function ScoutGame() {
             {/* Post Auction */}
             <form onSubmit={addAuctionItem} style={styles.missionForm}>
               <input type="text" placeholder="Auction Item" value={newItemName} onChange={e => setNewItemName(e.target.value)} style={styles.input} required />
-              <input type="number" placeholder="Min Bid" value={newItemMinBid} onChange={e => setNewItemMinBid(e.target.value)} style={styles.input} required />
-              <button type="submit" style={styles.secondaryButton}>Post Auction</button>
-            </form>
-
-            <div style={styles.listContainer}>
-              <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Auctions:</h3>
-              {auctions.map(a => (
-                <div key={a.id} style={styles.missionItem}>
-                  <div>
-                    <span style={{fontWeight: 'bold'}}>{a.item}</span>
-                    <div style={{fontSize: '12px', color: '#85e3ff'}}>{a.currentBid ? `Top Bid: 🪙 ${a.currentBid} (${a.bidder})` : `Min Bid: 🪙 ${a.minBid}`}</div>
-                  </div>
-                  <button onClick={() => closeBidAndAward(a)} style={styles.claimButton}>Close Bid</button>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
-          </div>
-        ) : (
-          <div>
-            <div style={styles.badgePlayer}>Patrol: {playerName} | 🪙 {currentPlayer?.coins || 0} Coins</div>
-            
-            {/* Live Leaderboard */}
-            <div style={styles.listContainer}>
-              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Troop Leaderboard:</h3>
-              {players.length === 0 ? <p style={styles.emptyText}>You are the first player!</p> :
-                players.sort((a,b) => (b.coins||0) - (a.coins||0)).map(p => (
-                  <div key={p.id} style={{display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#c2d6cb', padding: '4px 0'}}>
-                    <span>{p.name}</span><span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
-                  </div>
-                ))
-              }
-            </div>
-
-            {/* Recent Activity */}
-            {history.length > 0 && (
-              <div style={styles.listContainer}>
-                <h3 style={{color: '#85e3ff', fontSize: '15px', margin: '5px 0 8px 0'}}>Recent Wins:</h3>
-                {history.slice(0, 3).map(h => (
-                  <div key={h.id} style={{fontSize: '12px', color: '#fff', padding: '4px 0', borderBottom: '1px solid #2e7d51'}}>{h.message}</div>
-                ))}
-              </div>
-            )}
-
-            {/* Missions */}
-            <div style={styles.listContainer}>
-              <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Active Missions:</h3>
-              {missions.length === 0 ? <p style={styles.emptyText}>No active missions.</p> :
-                missions.map(m => (
-                  <div key={m.id} style={styles.missionItem}>
-                    <div>
-                      <div style={{fontWeight: 'bold'}}>{m.title}</div>
-                      <div style={{fontSize: '12px', color: '#a3c1ad'}}>Reward: 🪙 {m.reward}</div>
-                    </div>
-                    <button style={styles.claimButton} onClick={() => completeMission(m)}>Complete</button>
-                  </div>
-                ))
-              }
-            </div>
-
-            {/* Auctions */}
-            <div style={styles.listContainer}>
-              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Auctions:</h3>
-              {auctions.length === 0 ? <p style={styles.emptyText}>No active auctions.</p> :
-                auctions.map(a => (
-                  <div key={a.id} style={styles.missionItem}>
-                    <div>
-                      <div style={{fontWeight: 'bold'}}>{a.item}</div>
-                      <div style={{fontSize: '12px', color: '#85e3ff'}}>Top Bid: {a.currentBid ? `🪙 ${a.currentBid} (${a.bidder})` : 'None'}</div>
-                    </div>
-                    <div style={{display: 'flex', gap
+              <input type="number" placeholder="Min Bid" value={newItemMinBid} onChange={e => setNewItemMinBid(e.target.value)} style={styles.input
