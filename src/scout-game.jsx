@@ -65,6 +65,7 @@ export default function ScoutGame() {
     setUserEmail(normalizedInput);
     setPlayerName(currentName);
 
+    // Add player to database instantly so they appear on the host leaderboard
     if (assignedRole === 'player') {
       const q = query(collection(db, 'players'), where("email", "==", normalizedInput));
       const snap = await getDocs(q);
@@ -218,4 +219,111 @@ export default function ScoutGame() {
             {/* Post Auction */}
             <form onSubmit={addAuctionItem} style={styles.missionForm}>
               <input type="text" placeholder="Auction Item" value={newItemName} onChange={e => setNewItemName(e.target.value)} style={styles.input} required />
-              <input type="number" placeholder="Min Bid" value={newItemMinBid} onChange={e => setNewItemMinBid(e.target.value)} style={styles.input
+              <input type="number" placeholder="Min Bid" value={newItemMinBid} onChange={e => setNewItemMinBid(e.target.value)} style={styles.input} required />
+              <button type="submit" style={styles.secondaryButton}>Post Auction</button>
+            </form>
+
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Auctions:</h3>
+              {auctions.map(a => (
+                <div key={a.id} style={styles.missionItem}>
+                  <div>
+                    <span style={{fontWeight: 'bold'}}>{a.item}</span>
+                    <div style={{fontSize: '12px', color: '#85e3ff'}}>{a.currentBid ? `Top Bid: 🪙 ${a.currentBid} (${a.bidder})` : `Min Bid: 🪙 ${a.minBid}`}</div>
+                  </div>
+                  <button onClick={() => closeBidAndAward(a)} style={styles.claimButton}>Close Bid</button>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
+          </div>
+        ) : (
+          <div>
+            <div style={styles.badgePlayer}>Patrol: {playerName} | 🪙 {currentPlayer?.coins || 0} Coins</div>
+            
+            {/* Live Leaderboard */}
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Troop Leaderboard:</h3>
+              {players.length === 0 ? <p style={styles.emptyText}>You are the first player!</p> :
+                players.sort((a,b) => (b.coins||0) - (a.coins||0)).map(p => (
+                  <div key={p.id} style={{display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#c2d6cb', padding: '4px 0'}}>
+                    <span>{p.name}</span><span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
+                  </div>
+                ))
+              }
+            </div>
+
+            {/* Recent Activity */}
+            {history.length > 0 && (
+              <div style={styles.listContainer}>
+                <h3 style={{color: '#85e3ff', fontSize: '15px', margin: '5px 0 8px 0'}}>Recent Wins:</h3>
+                {history.slice(0, 3).map(h => (
+                  <div key={h.id} style={{fontSize: '12px', color: '#fff', padding: '4px 0', borderBottom: '1px solid #2e7d51'}}>{h.message}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Missions */}
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#fff', fontSize: '15px', margin: '10px 0 8px 0'}}>Active Missions:</h3>
+              {missions.length === 0 ? <p style={styles.emptyText}>No active missions.</p> :
+                missions.map(m => (
+                  <div key={m.id} style={styles.missionItem}>
+                    <div>
+                      <div style={{fontWeight: 'bold'}}>{m.title}</div>
+                      <div style={{fontSize: '12px', color: '#a3c1ad'}}>Reward: 🪙 {m.reward}</div>
+                    </div>
+                    <button style={styles.claimButton} onClick={() => completeMission(m)}>Complete</button>
+                  </div>
+                ))
+              }
+            </div>
+
+            {/* Auctions */}
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '10px 0 8px 0'}}>Live Auctions:</h3>
+              {auctions.length === 0 ? <p style={styles.emptyText}>No active auctions.</p> :
+                auctions.map(a => (
+                  <div key={a.id} style={styles.missionItem}>
+                    <div>
+                      <div style={{fontWeight: 'bold'}}>{a.item}</div>
+                      <div style={{fontSize: '12px', color: '#85e3ff'}}>Top Bid: {a.currentBid ? `🪙 ${a.currentBid} (${a.bidder})` : 'None'}</div>
+                    </div>
+                    <div style={{display: 'flex', gap: '5px', alignItems: 'center'}}>
+                      <input type="number" placeholder={`> ${a.currentBid || a.minBid}`} value={bidInput[a.id] || ''} onChange={e => setBidInput({ ...bidInput, [a.id]: e.target.value })} style={{width: '60px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #2e7d51', background: '#123320', color: '#fff'}} />
+                      <button style={styles.claimButton} onClick={() => placeBid(a.id, a.minBid, a.currentBid)}>Bid</button>
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+
+            <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  container: { minHeight: '100vh', background: '#143825', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', padding: '20px' },
+  card: { background: '#1e4d32', border: '2px solid #2e7d51', borderRadius: '16px', padding: '30px', width: '100%', maxWidth: '480px', textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' },
+  iconBox: { fontSize: '40px', marginBottom: '10px' },
+  title: { color: '#ffffff', fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' },
+  subtitle: { color: '#a3c1ad', fontSize: '14px', marginBottom: '24px' },
+  form: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  missionForm: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '15px', textAlign: 'left' },
+  input: { padding: '12px', borderRadius: '8px', border: '1px solid #2e7d51', background: '#123320', color: '#fff', fontSize: '15px', outline: 'none' },
+  button: { background: '#ffffff', color: '#143825', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '8px' },
+  secondaryButton: { background: '#2e7d51', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
+  logoutButton: { background: 'transparent', color: '#a3c1ad', border: '1px solid #2e7d51', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', marginTop: '20px', fontSize: '13px' },
+  badgeHost: { background: '#b23b3b', color: '#fff', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', marginBottom: '16px', display: 'inline-block' },
+  badgePlayer: { background: '#2b7ab2', color: '#fff', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', marginBottom: '16px', display: 'inline-block' },
+  listContainer: { textAlign: 'left', marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px', background: '#123320', padding: '12px', borderRadius: '8px', border: '1px solid #2e7d51' },
+  missionItem: { background: '#143825', padding: '10px 14px', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff', fontSize: '14px', border: '1px solid #2e7d51' },
+  claimButton: { background: '#ffffff', color: '#143825', border: 'none', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' },
+  deleteButton: { background: '#b23b3b', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' },
+  emptyText: { fontSize: '13px', color: '#a3c1ad' }
+};
