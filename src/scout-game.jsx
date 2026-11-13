@@ -25,7 +25,7 @@ export default function ScoutGame() {
   const [auctions, setAuctions] = useState([]);
   const [players, setPlayers] = useState([]);
   const [submissions, setSubmissions] = useState([]);
-  const [history, setHistory] = useState([]); // Tracks who won what
+  const [history, setHistory] = useState([]); 
 
   const [newMissionTitle, setNewMissionTitle] = useState('');
   const [newMissionReward, setNewMissionReward] = useState('');
@@ -42,7 +42,7 @@ export default function ScoutGame() {
     const unsubSubs = onSnapshot(collection(db, 'submissions'), (snap) => setSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubHistory = onSnapshot(collection(db, 'history'), (snap) => {
       const hist = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setHistory(hist.sort((a, b) => b.timestamp - a.timestamp)); // Newest first
+      setHistory(hist.sort((a, b) => b.timestamp - a.timestamp)); 
     });
 
     return () => { unsubMissions(); unsubAuctions(); unsubPlayers(); unsubSubs(); unsubHistory(); };
@@ -69,7 +69,6 @@ export default function ScoutGame() {
       const q = query(collection(db, 'players'), where("email", "==", normalizedInput));
       const snap = await getDocs(q);
       if (snap.empty) {
-        // New players start as "pending" until host approves them
         await addDoc(collection(db, 'players'), { name: currentName, email: normalizedInput, coins: 0, status: 'pending' });
       }
     }
@@ -85,6 +84,13 @@ export default function ScoutGame() {
   // Host Actions
   const approvePlayer = async (playerId) => {
     await updateDoc(doc(db, 'players', playerId), { status: 'approved' });
+  };
+
+  // NEW: Reject a request or remove a player completely
+  const removePlayer = async (playerId) => {
+    if (window.confirm("Are you sure you want to remove this player?")) {
+      await deleteDoc(doc(db, 'players', playerId));
+    }
   };
 
   const approveSubmission = async (sub) => {
@@ -127,7 +133,6 @@ export default function ScoutGame() {
     setNewItemMinBid('');
   };
 
-  // Player Actions
   const completeMission = async (mission) => {
     await addDoc(collection(db, 'submissions'), {
       missionId: mission.id, missionTitle: mission.title, reward: mission.reward,
@@ -167,18 +172,35 @@ export default function ScoutGame() {
           <div>
             <div style={styles.badgeHost}>Host Mode: {userEmail}</div>
             
-            {/* Player Approvals */}
+            {/* Player Approvals (Now with Reject Button) */}
             {pendingPlayers.length > 0 && (
               <div style={styles.listContainer}>
                 <h3 style={{color: '#ff8585', fontSize: '15px', margin: '5px 0 8px 0'}}>Needs Access Approval ({pendingPlayers.length}):</h3>
                 {pendingPlayers.map(p => (
                   <div key={p.id} style={styles.missionItem}>
                     <span style={{fontWeight: 'bold'}}>{p.name}</span>
-                    <button onClick={() => approvePlayer(p.id)} style={styles.claimButton}>Approve Player</button>
+                    <div style={{display: 'flex', gap: '5px'}}>
+                      <button onClick={() => approvePlayer(p.id)} style={styles.claimButton}>Approve</button>
+                      <button onClick={() => removePlayer(p.id)} style={styles.deleteButton}>Reject</button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
+
+            {/* Troop Leaderboard (Host View - Now with Remove Button) */}
+            <div style={styles.listContainer}>
+              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Approved Players & Coins:</h3>
+              {approvedPlayers.map(p => (
+                <div key={p.id} style={styles.missionItem}>
+                  <div>
+                    <span>{p.name}</span>
+                    <span style={{color: '#ffd700', fontWeight: 'bold', marginLeft: '10px'}}>🪙 {p.coins || 0}</span>
+                  </div>
+                  <button onClick={() => removePlayer(p.id)} style={styles.deleteButton}>Remove</button>
+                </div>
+              ))}
+            </div>
 
             {/* Submissions to Review */}
             <div style={styles.listContainer}>
@@ -197,16 +219,6 @@ export default function ScoutGame() {
                   </div>
                 ))
               }
-            </div>
-
-            {/* Troop Leaderboard (Host View) */}
-            <div style={styles.listContainer}>
-              <h3 style={{color: '#ffd700', fontSize: '15px', margin: '5px 0 8px 0'}}>Approved Players & Coins:</h3>
-              {approvedPlayers.map(p => (
-                <div key={p.id} style={styles.missionItem}>
-                  <span>{p.name}</span><span style={{color: '#ffd700', fontWeight: 'bold'}}>🪙 {p.coins || 0}</span>
-                </div>
-              ))}
             </div>
 
             {/* Post Mission */}
